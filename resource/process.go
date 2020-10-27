@@ -34,7 +34,10 @@ func (p *Process) Validate(sys *system.System) []TestResult {
 
 func NewProcess(sysProcess system.Process, config util.Config) (*Process, error) {
 	executable := sysProcess.Executable()
-	running, _ := sysProcess.Running()
+	running, err := sysProcess.Running()
+	if err != nil {
+		return nil, err
+	}
 	return &Process{
 		Executable: executable,
 		Running:    running,

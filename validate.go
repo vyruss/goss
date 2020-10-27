@@ -2,6 +2,7 @@ package goss
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -9,85 +10,134 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fatih/color"
+
 	"github.com/aelsabbahy/goss/outputs"
 	"github.com/aelsabbahy/goss/resource"
 	"github.com/aelsabbahy/goss/system"
 	"github.com/aelsabbahy/goss/util"
-	"github.com/fatih/color"
-	"github.com/urfave/cli"
 )
 
-func getGossConfig(c *cli.Context) GossConfig {
+func getGossConfig(vars string, varsInline string, specFile string) (cfg *GossConfig, err error) {
 	// handle stdin
 	var fh *os.File
 	var path, source string
 	var gossConfig GossConfig
-	TemplateFilter = NewTemplateFilter(c.GlobalString("vars"))
-	specFile := c.GlobalString("gossfile")
+
+	currentTemplateFilter, err = NewTemplateFilter(vars, varsInline)
+	if err != nil {
+		return nil, err
+	}
+
 	if specFile == "-" {
 		source = "STDIN"
 		fh = os.Stdin
 		data, err := ioutil.ReadAll(fh)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return nil, err
 		}
-		OutStoreFormat = getStoreFormatFromData(data)
-		gossConfig = ReadJSONData(data, true)
+		outStoreFormat, err = getStoreFormatFromData(data)
+		if err != nil {
+			return nil, err
+		}
+
+		gossConfig, err = ReadJSONData(data, true)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		source = specFile
 		path = filepath.Dir(specFile)
-		OutStoreFormat = getStoreFormatFromFileName(specFile)
-		gossConfig = ReadJSON(specFile)
+		outStoreFormat, err = getStoreFormatFromFileName(specFile)
+		if err != nil {
+			return nil, err
+		}
+
+		gossConfig, err = ReadJSON(specFile)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	gossConfig = mergeJSONData(gossConfig, 0, path)
+	gossConfig, err = mergeJSONData(gossConfig, 0, path)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(gossConfig.Resources()) == 0 {
-		fmt.Printf("Error: found 0 tests, source: %v\n", source)
-		os.Exit(1)
+		return nil, fmt.Errorf("found 0 tests, source: %v", source)
 	}
-	return gossConfig
+
+	return &gossConfig, nil
 }
 
-func getOutputer(c *cli.Context) outputs.Outputer {
-	if c.Bool("no-color") {
+func getOutputer(c *bool, format string) (outputs.Outputer, error) {
+	if c != nil && *c {
 		color.NoColor = true
 	}
-	if c.Bool("color") {
+	if c != nil && !*c {
 		color.NoColor = false
 	}
-	return outputs.GetOutputer(c.String("format"))
+
+	return outputs.GetOutputer(format)
 }
 
-func Validate(c *cli.Context, startTime time.Time) {
-
-	outputConfig := util.OutputConfig{
-		FormatOptions: c.StringSlice("format-options"),
+// ValidateResults performs validation and provides programmatic access to validation results
+// no retries or outputs are supported
+func ValidateResults(c *util.Config) (results <-chan []resource.TestResult, err error) {
+	gossConfig, err := getGossConfig(c.Vars, c.VarsInline, c.Spec)
+	if err != nil {
+		return nil, err
 	}
 
-	gossConfig := getGossConfig(c)
-	sys := system.New(c)
-	outputer := getOutputer(c)
+	sys := system.New(c.PackageManager)
 
-	sleep := c.Duration("sleep")
-	retryTimeout := c.Duration("retry-timeout")
+	return validate(sys, *gossConfig, c.MaxConcurrent), nil
+}
+
+// Validate performs validation, writes formatted output to stdout by default
+// and supports retries and more, this is the full featured Validate used
+// by the typical CLI invocation and will produce output to StdOut.  Use
+// ValidateResults for programmatic access
+func Validate(c *util.Config, startTime time.Time) (code int, err error) {
+	outputConfig := util.OutputConfig{
+		FormatOptions: c.FormatOptions,
+	}
+
+	gossConfig, err := getGossConfig(c.Vars, c.VarsInline, c.Spec)
+	if err != nil {
+		return 1, err
+	}
+
+	sys := system.New(c.PackageManager)
+	outputer, err := getOutputer(c.NoColor, c.OutputFormat)
+	if err != nil {
+		return 1, err
+	}
+
+	var ofh io.Writer
+	ofh = os.Stdout
+	if c.OutputWriter != nil {
+		ofh = c.OutputWriter
+	}
+
+	sleep := c.Sleep
+	retryTimeout := c.RetryTimeout
 	i := 1
 	for {
 		iStartTime := time.Now()
-		out := validate(sys, gossConfig, c.Int("max-concurrent"))
-		exitCode := outputer.Output(os.Stdout, out, iStartTime, outputConfig)
+		out := validate(sys, *gossConfig, c.MaxConcurrent)
+		exitCode := outputer.Output(ofh, out, iStartTime, outputConfig)
 		if retryTimeout == 0 || exitCode == 0 {
-			os.Exit(exitCode)
+			return exitCode, nil
 		}
 		elapsed := time.Since(startTime)
 		if elapsed+sleep > retryTimeout {
-			color.Red("\nERROR: Timeout of %s reached before tests entered a passing state", retryTimeout)
-			os.Exit(3)
+			return 3, fmt.Errorf("timeout of %s reached before tests entered a passing state", retryTimeout)
 		}
 		color.Red("Retrying in %s (elapsed/timeout time: %.3fs/%s)\n\n\n", sleep, elapsed.Seconds(), retryTimeout)
 		// Reset cache
-		sys = system.New(c)
+		sys = system.New(c.PackageManager)
 		time.Sleep(sleep)
 		i++
 		fmt.Printf("Attempt #%d:\n", i)

@@ -14,6 +14,7 @@ type Mount interface {
 	Opts() ([]string, error)
 	Source() (string, error)
 	Filesystem() (string, error)
+	Usage() (int, error)
 }
 
 type DefMount struct {
@@ -21,6 +22,7 @@ type DefMount struct {
 	loaded     bool
 	exists     bool
 	mountInfo  *mount.Info
+	usage      int
 	err        error
 }
 
@@ -44,6 +46,14 @@ func (m *DefMount) setup() error {
 	}
 	m.mountInfo = mountInfo
 	m.exists = true
+
+	usage, err := getUsage(m.mountPoint)
+	if err != nil {
+		m.err = err
+		return m.err
+	}
+	m.usage = usage
+
 	return nil
 }
 
@@ -85,6 +95,14 @@ func (m *DefMount) Filesystem() (string, error) {
 	}
 
 	return m.mountInfo.Fstype, nil
+}
+
+func (m *DefMount) Usage() (int, error) {
+	if err := m.setup(); err != nil {
+		return -1, err
+	}
+
+	return m.usage, nil
 }
 
 func getMount(mountpoint string) (*mount.Info, error) {

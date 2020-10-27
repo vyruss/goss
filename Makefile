@@ -3,13 +3,14 @@ export GO15VENDOREXPERIMENT=1
 exe = github.com/aelsabbahy/goss/cmd/goss
 pkgs = $(shell ./novendor.sh)
 cmd = goss
-TRAVIS_TAG ?= "0.0.0"
-GO_FILES = $(shell find . \( -path ./vendor -o -name '_test.go' \) -prune -o -name '*.go' -print)
 GO111MODULE=on
+GO_FILES = $(shell git ls-files -- '*.go' ':!:*vendor*_test.go')
 
-.PHONY: all build install test coverage release bench test-int lint gen centos7 wheezy precise alpine3 arch test-int32 centos7-32 wheezy-32 precise-32 alpine3-32 arch-32
+.PHONY: all build install test release bench fmt lint vet test-int-all gen centos7 wheezy precise alpine3 arch test-int32 centos7-32 wheezy-32 precise-32 alpine3-32 arch-32
 
-all: test-all test-all-32
+all: test-short-all test-int-all dgoss-sha256
+
+test-short-all: fmt lint vet test
 
 install: release/goss-linux-amd64
 	$(info INFO: Starting build $@)
@@ -17,45 +18,69 @@ install: release/goss-linux-amd64
 
 test:
 	$(info INFO: Starting build $@)
-	go test $(pkgs)
+	./ci/go-test.sh $(pkgs)
 
 lint:
 	$(info INFO: Starting build $@)
-	#go tool vet .
-	golint $(pkgs) | grep -v 'unexported' || true
+	golint $(pkgs) || true
+
+vet:
+	$(info INFO: Starting build $@)
+	go vet $(pkgs) || true
+
+fmt:
+	$(info INFO: Starting build $@)
+	./ci/go-fmt.sh
 
 bench:
 	$(info INFO: Starting build $@)
 	go test -bench=.
 
-coverage:
+alpha-test-%: release/goss-%
 	$(info INFO: Starting build $@)
-	go test -cover $(pkgs)
-	#go test -coverprofile=/tmp/coverage.out .
-	#go tool cover -func=/tmp/coverage.out
-	#go tool cover -html=/tmp/coverage.out -o /tmp/coverage.html
-	#xdg-open /tmp/coverage.html
+	./integration-tests/run-tests-alpha.sh $*
 
-release/goss-linux-386: $(GO_FILES)
+test-int-serve-%: release/goss-%
 	$(info INFO: Starting build $@)
-	CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -ldflags "-X main.version=$(TRAVIS_TAG) -s -w" -o release/$(cmd)-linux-386 $(exe)
-release/goss-linux-amd64: $(GO_FILES)
-	$(info INFO: Starting build $@)
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=$(TRAVIS_TAG) -s -w" -o release/$(cmd)-linux-amd64 $(exe)
-release/goss-linux-arm: $(GO_FILES)
-	$(info INFO: Starting build $@)
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -ldflags "-X main.version=$(TRAVIS_TAG) -s -w" -o release/$(cmd)-linux-arm $(exe)
+	./integration-tests/run-serve-tests.sh $*
+# shim to account for linux being not in alpha
+test-int-serve-linux-amd64: test-int-serve-alpha-linux-amd64
 
-
+release/goss-%: $(GO_FILES)
+	./release-build.sh $*
 
 release:
 	$(MAKE) clean
 	$(MAKE) build
 
-build: release/goss-linux-386 release/goss-linux-amd64 release/goss-linux-arm
+build: release/goss-alpha-darwin-amd64 release/goss-linux-386 release/goss-linux-amd64 release/goss-linux-arm release/goss-alpha-windows-amd64
 
-test-int: centos7 wheezy precise alpine3 arch
+gen:
+	$(info INFO: Starting build $@)
+	go generate -tags genny $(pkgs)
+
+clean:
+	$(info INFO: Starting build $@)
+	rm -rf ./release
+
+build-images:
+	$(info INFO: Starting build $@)
+	development/build_images.sh
+
+push-images:
+	$(info INFO: Starting build $@)
+	development/push_images.sh
+
+test-darwin-all: test-short-all test-int-darwin-all
+# linux _does_ have the docker-style testing, but does _not_ currently have the same style integration tests darwin+windows do, _because_ of the docker-style testing.
+test-linux-all: test-short-all test-int-64 test-int-32
+test-windows-all: test-short-all test-int-windows-all
+
+test-int-64: centos7 wheezy precise alpine3 arch test-int-serve-linux-amd64
 test-int-32: centos7-32 wheezy-32 precise-32 alpine3-32 arch-32
+test-int-darwin-all: alpha-test-alpha-darwin-amd64 test-int-serve-alpha-darwin-amd64
+test-int-windows-all: alpha-test-alpha-windows-amd64 test-int-serve-alpha-windows-amd64
+test-int-all: test-int-32 test-int-64
 
 centos7-32: build
 	$(info INFO: Starting build $@)
@@ -88,22 +113,5 @@ arch: build
 	$(info INFO: Starting build $@)
 	cd integration-tests/ && ./test.sh arch amd64
 
-
-test-all-32: lint test test-int-32
-test-all: lint test test-int
-
-gen:
-	$(info INFO: Starting build $@)
-	go generate -tags genny $(pkgs)
-
-clean:
-	$(info INFO: Starting build $@)
-	rm -rf ./release
-
-build-images:
-	$(info INFO: Starting build $@)
-	development/build_images.sh
-
-push-images:
-	$(info INFO: Starting build $@)
-	development/push_images.sh
+dgoss-sha256:
+	cd extras/dgoss/ && sha256sum dgoss > dgoss.sha256

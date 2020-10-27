@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/aelsabbahy/goss/system"
 	"github.com/aelsabbahy/goss/util"
@@ -22,12 +23,7 @@ type Command struct {
 	Skip       bool     `json:"skip,omitempty" yaml:"skip,omitempty"`
 }
 
-func (c *Command) ID() string {
-	if c.Exec != "" && c.Exec != c.Command {
-		return fmt.Sprintf("%s: %s", c.Command, c.Exec)
-	}
-	return c.Command
-}
+func (c *Command) ID() string      { return c.Command }
 func (c *Command) SetID(id string) { c.Command = id }
 
 func (c *Command) GetTitle() string { return c.Title }
@@ -49,7 +45,7 @@ func (c *Command) Validate(sys *system.System) []TestResult {
 	}
 
 	var results []TestResult
-	sysCommand := sys.NewCommand(c.GetExec(), sys, util.Config{Timeout: c.Timeout})
+	sysCommand := sys.NewCommand(c.GetExec(), sys, util.Config{Timeout: time.Duration(c.Timeout) * time.Millisecond})
 
 	cExitStatus := deprecateAtoI(c.ExitStatus, fmt.Sprintf("%s: command.exit-status", c.Command))
 	results = append(results, ValidateValue(c, "exit-status", cExitStatus, sysCommand.ExitStatus, skip))
@@ -70,7 +66,7 @@ func NewCommand(sysCommand system.Command, config util.Config) (*Command, error)
 		ExitStatus: exitStatus,
 		Stdout:     []string{},
 		Stderr:     []string{},
-		Timeout:    config.Timeout,
+		Timeout:    config.TimeOutMilliSeconds(),
 	}
 
 	if !contains(config.IgnoreList, "stdout") {

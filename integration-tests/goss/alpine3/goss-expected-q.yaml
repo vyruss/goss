@@ -19,6 +19,9 @@ addr:
   tcp://google.com:443:
     reachable: true
     timeout: 1000
+  udp://8.8.8.8:53:
+    reachable: true
+    timeout: 1000
 port:
   tcp:80:
     listening: false
@@ -71,7 +74,7 @@ dns:
     resolvable: true
     timeout: 1000
     server: 8.8.8.8
-  PTR:8.8.8.8:
+  PTR:54.243.154.1:
     resolvable: true
     timeout: 1000
     server: 8.8.8.8
