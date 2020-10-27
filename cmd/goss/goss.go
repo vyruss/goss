@@ -4,15 +4,64 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/aelsabbahy/goss"
 	"github.com/aelsabbahy/goss/outputs"
+	"github.com/aelsabbahy/goss/system"
+	"github.com/aelsabbahy/goss/util"
+
+	"github.com/fatih/color"
 	"github.com/urfave/cli"
-	//"time"
 )
 
 var version string
+
+// converts a cli context into a goss Config
+func newRuntimeConfigFromCLI(c *cli.Context) *util.Config {
+	cfg := &util.Config{
+		AllowInsecure:     c.Bool("insecure"),
+		AnnounceToCLI:     true,
+		Cache:             c.Duration("cache"),
+		Debug:             c.Bool("debug"),
+		Endpoint:          c.String("endpoint"),
+		FormatOptions:     c.StringSlice("format-options"),
+		IgnoreList:        c.GlobalStringSlice("exclude-attr"),
+		ListenAddress:     c.String("listen-addr"),
+		MaxConcurrent:     c.Int("max-concurrent"),
+		NoFollowRedirects: c.Bool("no-follow-redirects"),
+		OutputFormat:      c.String("format"),
+		PackageManager:    c.GlobalString("package"),
+		Password:          c.String("password"),
+		RetryTimeout:      c.Duration("retry-timeout"),
+		Server:            c.String("server"),
+		Sleep:             c.Duration("sleep"),
+		Spec:              c.GlobalString("gossfile"),
+		Timeout:           c.Duration("timeout"),
+		Username:          c.String("username"),
+		Vars:              c.GlobalString("vars"),
+		VarsInline:        c.GlobalString("vars-inline"),
+	}
+
+	if c.Bool("no-color") {
+		util.WithNoColor()(cfg)
+	}
+
+	if c.Bool("color") {
+		util.WithColor()(cfg)
+	}
+
+	return cfg
+}
+
+func timeoutFlag(value time.Duration) cli.DurationFlag {
+	return cli.DurationFlag{
+		Name:  "timeout",
+		Value: value,
+	}
+}
 
 func main() {
 	startTime := time.Now()
@@ -34,8 +83,13 @@ func main() {
 			EnvVar: "GOSS_VARS",
 		},
 		cli.StringFlag{
+			Name:   "vars-inline",
+			Usage:  "json/yaml string containing variables for template (overwrites vars)",
+			EnvVar: "GOSS_VARS_INLINE",
+		},
+		cli.StringFlag{
 			Name:  "package",
-			Usage: "Package type to use [rpm, deb, apk, pacman]",
+			Usage: fmt.Sprintf("Package type to use [%s]", strings.Join(system.SupportedPackageManagers(), ", ")),
 		},
 	}
 	app.Commands = []cli.Command{
@@ -85,7 +139,13 @@ func main() {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				goss.Validate(c, startTime)
+				fatalAlphaIfNeeded(c)
+				code, err := goss.Validate(newRuntimeConfigFromCLI(c), startTime)
+				if err != nil {
+					color.Red(fmt.Sprintf("Error: %v\n", err))
+				}
+				os.Exit(code)
+
 				return nil
 			},
 		},
@@ -131,8 +191,8 @@ func main() {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				goss.Serve(c)
-				return nil
+				fatalAlphaIfNeeded(c)
+				return goss.Serve(newRuntimeConfigFromCLI(c))
 			},
 		},
 		{
@@ -146,7 +206,14 @@ func main() {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				fmt.Print(goss.RenderJSON(c))
+				fatalAlphaIfNeeded(c)
+				j, err := goss.RenderJSON(newRuntimeConfigFromCLI(c))
+				if err != nil {
+					return err
+				}
+
+				fmt.Print(j)
+
 				return nil
 			},
 		},
@@ -155,7 +222,8 @@ func main() {
 			Aliases: []string{"aa"},
 			Usage:   "automatically add all matching resource to the test suite",
 			Action: func(c *cli.Context) error {
-				return goss.AutoAddResources(c.GlobalString("gossfile"), c.Args(), c)
+				fatalAlphaIfNeeded(c)
+				return goss.AutoAddResources(c.GlobalString("gossfile"), c.Args(), newRuntimeConfigFromCLI(c))
 			},
 		},
 		{
@@ -173,92 +241,93 @@ func main() {
 					Name:  "package",
 					Usage: "add new package",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Packages", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Package", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "file",
 					Usage: "add new file",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Files", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "File", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "addr",
 					Usage: "add new remote address:port - ex: google.com:80",
 					Flags: []cli.Flag{
-						cli.DurationFlag{
-							Name:  "timeout",
-							Value: 500 * time.Millisecond,
-						},
+						timeoutFlag(500 * time.Millisecond),
 					},
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Addrs", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Addr", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "port",
 					Usage: "add new listening [protocol]:port - ex: 80 or udp:123",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Ports", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Port", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "service",
 					Usage: "add new service",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Services", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Service", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "user",
 					Usage: "add new user",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Users", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "User", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "group",
 					Usage: "add new group",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Groups", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Group", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "command",
 					Usage: "add new command",
 					Flags: []cli.Flag{
-						cli.DurationFlag{
-							Name:  "timeout",
-							Value: 10 * time.Second,
-						},
+						timeoutFlag(10 * time.Second),
 					},
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Commands", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Command", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "dns",
 					Usage: "add new dns",
 					Flags: []cli.Flag{
-						cli.DurationFlag{
-							Name:  "timeout",
-							Value: 500 * time.Millisecond,
-						},
+						timeoutFlag(500 * time.Millisecond),
 						cli.StringFlag{
 							Name:  "server",
 							Usage: "The IP address of a DNS server to query",
 						},
 					},
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "DNS", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "DNS", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "process",
 					Usage: "add new process name",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Processes", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Process", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
@@ -271,10 +340,7 @@ func main() {
 						cli.BoolFlag{
 							Name: "no-follow-redirects, r",
 						},
-						cli.DurationFlag{
-							Name:  "timeout",
-							Value: 5 * time.Second,
-						},
+						timeoutFlag(5 * time.Second),
 						cli.StringFlag{
 							Name:  "username, u",
 							Usage: "Username for basic auth",
@@ -285,44 +351,86 @@ func main() {
 						},
 					},
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "HTTPs", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "HTTP", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "goss",
 					Usage: "add new goss file, it will be imported from this one",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Gossfiles", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Gossfile", c.Args(), newRuntimeConfigFromCLI(c))
+
 					},
 				},
 				{
 					Name:  "kernel-param",
 					Usage: "add new goss kernel param",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "KernelParams", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "KernelParam", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "mount",
 					Usage: "add new mount",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Mounts", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Mount", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 				{
 					Name:  "interface",
 					Usage: "add new interface",
 					Action: func(c *cli.Context) error {
-						return goss.AddResources(c.GlobalString("gossfile"), "Interfaces", c.Args(), c)
+						fatalAlphaIfNeeded(c)
+						return goss.AddResources(c.GlobalString("gossfile"), "Interface", c.Args(), newRuntimeConfigFromCLI(c))
 					},
 				},
 			},
 		},
 	}
 
+	addAlphaFlagIfNeeded(app)
 	err := app.Run(os.Args)
 	if err != nil {
 		log.Fatal(err)
 	}
+}
 
+func addAlphaFlagIfNeeded(app *cli.App) {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		app.Flags = append(app.Flags, cli.StringFlag{
+			Name:   "use-alpha",
+			Usage:  fmt.Sprintf("goss is alpha-quality. Set to 1 to use anyway."),
+			EnvVar: "GOSS_USE_ALPHA",
+			Value:  "0",
+		})
+	}
+}
+
+const msgFormat string = `WARNING: goss for this platform (%q) is alpha-quality, work-in-progress, and not yet exercised within continuous integration.
+
+You should not expect everything to work. Treat linux as the canonical behaviour to expect.
+
+Please see https://github.com/aelsabbahy/goss/tree/master/docs/platform-feature-parity.md to set your expectations and see progress.
+Please file issues via https://github.com/aelsabbahy/goss/issues/new/choose
+Pull requests and bug reports very welcome.`
+
+func fatalAlphaIfNeeded(c *cli.Context) {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		if c.GlobalString("use-alpha") != "1" {
+			howto := map[string]string{
+				"darwin":  "export GOSS_USE_ALPHA=1",
+				"windows": "In cmd:        set GOSS_USE_ALPHA=1\nIn powershell: $env:GOSS_USE_ALPHA=1\nIn bash:       export GOSS_USE_ALPHA=1",
+			}
+			log.Printf(`Terminating.
+
+To bypass this and use the binary anyway:
+
+%s`, howto[runtime.GOOS])
+			os.Exit(1)
+		}
+	}
 }

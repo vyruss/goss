@@ -1,6 +1,8 @@
 package resource
 
 import (
+	"time"
+
 	"github.com/aelsabbahy/goss/system"
 	"github.com/aelsabbahy/goss/util"
 )
@@ -13,6 +15,8 @@ type HTTP struct {
 	AllowInsecure     bool     `json:"allow-insecure" yaml:"allow-insecure"`
 	NoFollowRedirects bool     `json:"no-follow-redirects" yaml:"no-follow-redirects"`
 	Timeout           int      `json:"timeout" yaml:"timeout"`
+	RequestHeader     []string `json:"request-headers,omitempty" yaml:"request-headers,omitempty"`
+	Headers           []string `json:"headers,omitempty" yaml:"headers,omitempty"`
 	Body              []string `json:"body" yaml:"body"`
 	Username          string   `json:"username,omitempty" yaml:"username,omitempty"`
 	Password          string   `json:"password,omitempty" yaml:"password,omitempty"`
@@ -33,7 +37,8 @@ func (u *HTTP) Validate(sys *system.System) []TestResult {
 	}
 	sysHTTP := sys.NewHTTP(u.HTTP, sys, util.Config{
 		AllowInsecure: u.AllowInsecure, NoFollowRedirects: u.NoFollowRedirects,
-		Timeout: u.Timeout, Username: u.Username, Password: u.Password})
+		Timeout: time.Duration(u.Timeout) * time.Millisecond, Username: u.Username, Password: u.Password,
+		RequestHeader: u.RequestHeader})
 	sysHTTP.SetAllowInsecure(u.AllowInsecure)
 	sysHTTP.SetNoFollowRedirects(u.NoFollowRedirects)
 
@@ -45,6 +50,9 @@ func (u *HTTP) Validate(sys *system.System) []TestResult {
 	results = append(results, ValidateValue(u, "status", u.Status, sysHTTP.Status, skip))
 	if shouldSkip(results) {
 		skip = true
+	}
+	if len(u.Headers) > 0 {
+		results = append(results, ValidateContains(u, "Headers", u.Headers, sysHTTP.Headers, skip))
 	}
 	if len(u.Body) > 0 {
 		results = append(results, ValidateContains(u, "Body", u.Body, sysHTTP.Body, skip))
@@ -59,10 +67,12 @@ func NewHTTP(sysHTTP system.HTTP, config util.Config) (*HTTP, error) {
 	u := &HTTP{
 		HTTP:              http,
 		Status:            status,
+		RequestHeader:     []string{},
+		Headers:           []string{},
 		Body:              []string{},
 		AllowInsecure:     config.AllowInsecure,
 		NoFollowRedirects: config.NoFollowRedirects,
-		Timeout:           config.Timeout,
+		Timeout:           config.TimeOutMilliSeconds(),
 		Username:          config.Username,
 		Password:          config.Password,
 	}

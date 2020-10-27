@@ -2,17 +2,17 @@ package system
 
 import (
 	"bytes"
-	"strconv"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 
 	"github.com/aelsabbahy/GOnetstat"
 	// This needs a better name
 	"github.com/aelsabbahy/go-ps"
+
 	util2 "github.com/aelsabbahy/goss/util"
-	"github.com/urfave/cli"
 )
 
 type Resource interface {
@@ -48,14 +48,17 @@ func (s *System) Ports() map[string][]GOnetstat.Process {
 	return s.ports
 }
 
-func (s *System) ProcMap() map[string][]ps.Process {
+func (s *System) ProcMap() (map[string][]ps.Process, error) {
+	var err error
+
 	s.procOnce.Do(func() {
-		s.procMap = GetProcs()
+		s.procMap, err = GetProcs()
 	})
-	return s.procMap
+
+	return s.procMap, err
 }
 
-func New(c *cli.Context) *System {
+func New(packageManager string) *System {
 	sys := &System{
 		NewFile:        NewDefFile,
 		NewAddr:        NewDefAddr,
@@ -71,19 +74,20 @@ func New(c *cli.Context) *System {
 		NewInterface:   NewDefInterface,
 		NewHTTP:        NewDefHTTP,
 	}
+
 	sys.detectService()
-	sys.detectPackage(c)
+	sys.detectPackage(packageManager)
+
 	return sys
 }
 
 // detectPackage adds the correct package creation function to a System struct
-func (sys *System) detectPackage(c *cli.Context) {
-	p := c.GlobalString("package")
-	if p != "deb" && p != "apk" && p != "pacman" && p != "rpm" {
+func (sys *System) detectPackage(p string) {
+	if p != "dpkg" && p != "apk" && p != "pacman" && p != "rpm" {
 		p = DetectPackageManager()
 	}
 	switch p {
-	case "deb":
+	case "dpkg":
 		sys.NewPackage = NewDebPackage
 	case "apk":
 		sys.NewPackage = NewAlpinePackage
@@ -110,14 +114,30 @@ func (sys *System) detectService() {
 	}
 }
 
+// SupportedPackageManagers is a list of package managers we support
+func SupportedPackageManagers() []string {
+	return []string{"apk", "dpkg", "pacman", "rpm"}
+}
+
+// IsSupportedPackageManager determines if p is a supported package manager
+func IsSupportedPackageManager(p string) bool {
+	for _, m := range SupportedPackageManagers() {
+		if m == p {
+			return true
+		}
+	}
+
+	return false
+}
+
 // DetectPackageManager attempts to detect whether or not the system is using
-// "deb", "rpm", "apk", or "pacman" package managers. It first attempts to
+// "dpkg", "rpm", "apk", or "pacman" package managers. It first attempts to
 // detect the distro. If that fails, it falls back to finding package manager
 // executables. If that fails, it returns the empty string.
 func DetectPackageManager() string {
 	switch DetectDistro() {
 	case "ubuntu":
-		return "deb"
+		return "dpkg"
 	case "redhat":
 		return "rpm"
 	case "alpine":
@@ -125,9 +145,9 @@ func DetectPackageManager() string {
 	case "arch":
 		return "pacman"
 	case "debian":
-		return "deb"
+		return "dpkg"
 	}
-	for _, manager := range []string{"deb", "rpm", "apk", "pacman"} {
+	for _, manager := range []string{"dpkg", "rpm", "apk", "pacman"} {
 		if HasCommand(manager) {
 			return manager
 		}

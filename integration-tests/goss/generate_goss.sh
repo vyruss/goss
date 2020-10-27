@@ -24,6 +24,8 @@ goss a "${args[@]}" package $package foobar vim-tiny
 
 goss a "${args[@]}" addr --timeout 1s google.com:443 google.com:22
 
+goss a "${args[@]}" addr --timeout 1s udp://8.8.8.8:53
+
 goss a "${args[@]}" port tcp:80 tcp6:80 9999
 
 goss a "${args[@]}" service $package foobar
@@ -40,7 +42,7 @@ goss a "${args[@]}" dns --timeout 1s --server 8.8.8.8 MX:dnstest.io
 
 goss a "${args[@]}" dns --timeout 1s --server 8.8.8.8 NS:dnstest.io
 
-goss a "${args[@]}" dns --timeout 1s --server 8.8.8.8 PTR:8.8.8.8
+goss a "${args[@]}" dns --timeout 1s --server 8.8.8.8 PTR:54.243.154.1
 
 goss a "${args[@]}" dns --timeout 1s --server 8.8.8.8 SRV:_https._tcp.dnstest.io
 

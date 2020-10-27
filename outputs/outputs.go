@@ -3,7 +3,6 @@ package outputs
 import (
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -14,9 +13,31 @@ import (
 	"github.com/fatih/color"
 )
 
+type formatOption struct {
+	name string
+}
+
 type Outputer interface {
 	Output(io.Writer, <-chan []resource.TestResult, time.Time, util.OutputConfig) int
+	ValidOptions() []*formatOption
 }
+
+var (
+	outputersMu sync.Mutex
+	outputers   = map[string]Outputer{
+		"documentation": &Documentation{},
+		"json_oneline":  &JsonOneline{},
+		"json":          &Json{},
+		"junit":         &JUnit{},
+		"nagios":        &Nagios{},
+		"rspecish":      &Rspecish{},
+		"structured":    &Structured{},
+		"tap":           &Tap{},
+	}
+	foPerfData = "perfdata"
+	foVerbose  = "verbose"
+	foPretty   = "pretty"
+)
 
 var green = color.New(color.FgGreen).SprintfFunc()
 var red = color.New(color.FgRed).SprintfFunc()
@@ -77,14 +98,7 @@ func humanizeResult2(r resource.TestResult) string {
 	}
 }
 
-// Copied from database/sql
-var (
-	outputersMu           sync.Mutex
-	outputers             = make(map[string]Outputer)
-	outputerFormatOptions = make(map[string][]string)
-)
-
-func RegisterOutputer(name string, outputer Outputer, formatOptions []string) {
+func RegisterOutputer(name string, outputer Outputer) {
 	outputersMu.Lock()
 	defer outputersMu.Unlock()
 
@@ -95,7 +109,6 @@ func RegisterOutputer(name string, outputer Outputer, formatOptions []string) {
 		panic("goss: Register called twice for ouputer " + name)
 	}
 	outputers[name] = outputer
-	outputerFormatOptions[name] = formatOptions
 }
 
 // Outputers returns a sorted list of the names of the registered outputers.
@@ -110,27 +123,40 @@ func Outputers() []string {
 	return list
 }
 
+// FormatOptions returns a sorted list of all the valid options that outputers accept
 func FormatOptions() []string {
 	outputersMu.Lock()
 	defer outputersMu.Unlock()
-	var list []string
-	for _, formatOptions := range outputerFormatOptions {
-		for _, opt := range formatOptions {
-			if !(util.IsValueInList(opt, list)) {
-				list = append(list, opt)
-			}
+	found := map[string]*formatOption{}
+	for _, o := range outputers {
+		for _, opt := range o.ValidOptions() {
+			found[opt.name] = opt
 		}
+	}
+	var list []string
+	for name := range found {
+		list = append(list, name)
 	}
 	sort.Strings(list)
 	return list
 }
 
-func GetOutputer(name string) Outputer {
-	if _, ok := outputers[name]; !ok {
-		fmt.Println("goss: Bad output format: " + name)
-		os.Exit(1)
+// IsValidFormat determines if f is a valid format name based on Outputers()
+func IsValidFormat(f string) bool {
+	for _, o := range Outputers() {
+		if o == f {
+			return true
+		}
 	}
-	return outputers[name]
+
+	return false
+}
+
+func GetOutputer(name string) (Outputer, error) {
+	if _, ok := outputers[name]; !ok {
+		return nil, fmt.Errorf("bad output format: " + name)
+	}
+	return outputers[name], nil
 }
 
 func subtractSlice(x, y []string) []string {
@@ -181,6 +207,7 @@ func summary(startTime time.Time, count, failed, skipped int) string {
 	s += f("Count: %d, Failed: %d, Skipped: %d\n", count, failed, skipped)
 	return s
 }
+
 func failedOrSkippedSummary(failedOrSkipped [][]resource.TestResult) string {
 	var s string
 	if len(failedOrSkipped) > 0 {

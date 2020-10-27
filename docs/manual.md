@@ -1,5 +1,7 @@
 # goss manual
 
+**Note:** For macOS and Windows, see: [platform-feature-parity](https://github.com/aelsabbahy/goss/blob/master/docs/platform-feature-parity.md)
+
 ## Table of Contents
 
 * [Table of Contents](#table-of-contents)
@@ -12,6 +14,7 @@
     * [render, r \- Render gossfile after importing all referenced gossfiles](#render-r---render-gossfile-after-importing-all-referenced-gossfiles)
     * [serve, s \- Serve a health endpoint](#serve-s---serve-a-health-endpoint)
     * [validate, v \- Validate the system](#validate-v---validate-the-system)
+* [Goss test creation](#goss-test-creation)
 * [Important note about goss file format](#important-note-about-goss-file-format)
 * [Available tests](#available-tests)
   * [addr](#addr)
@@ -47,21 +50,20 @@ VERSION:
    0.0.0
 
 COMMANDS:
-   validate, v	Validate system
-   serve, s	Serve a health endpoint
-   render, r	render gossfile after imports
-   autoadd, aa	automatically add all matching resource to the test suite
-   add, a	add a resource to the test suite
-   help, h	Shows a list of commands or help for one command
+     validate, v  Validate system
+     serve, s     Serve a health endpoint
+     render, r    render gossfile after imports
+     autoadd, aa  automatically add all matching resource to the test suite
+     add, a       add a resource to the test suite
+     help, h      Shows a list of commands or help for one command
 
 GLOBAL OPTIONS:
-   --gossfile, -g "./goss.yaml"	Goss file to read from / write to [$GOSS_FILE]
-   --vars value                 json/yaml file containing variables for template [$GOSS_VARS]
-   --package 			Package type to use [rpm, deb, apk, pacman]
-   --help, -h			show help
-   --generate-bash-completion
-   --version, -v		print the version
-
+   --gossfile value, -g value  Goss file to read from / write to (default: "./goss.yaml") [$GOSS_FILE]
+   --vars value                json/yaml file containing variables for template [$GOSS_VARS]
+   --vars-inline value         json/yaml string containing variables for template (overwrites vars) [$GOSS_VARS_INLINE]
+   --package value             Package type to use [rpm, deb, apk, pacman]
+   --help, -h                  show help
+   --version, -v               print the version
 ```
 **Note:** *Most flags can be set by using environment variables, see `--help` for more info.*
 
@@ -112,7 +114,7 @@ This will add a test for a resource. Non existent resources will add a test to e
 * `file` - can validate a [file](#file) existence, permissions, stats (size, etc) and contents
 * `goss` - allows you to include the contents of another [gossfile](#gossfile)
 * `group` - can validate the existence and values of a [group](#group) on the system
-* `http` - can validate the HTTP response code and content of a URI, see [http](#http)
+* `http` - can validate the HTTP response code, headers, and content of a URI, see [http](#http)
 * `interface` - can validate the existence and values (es. the addresses) of a network interface, see [interface](#interface)
 * `kernel-param` - can validate kernel parameters (sysctl values), see [kernel-param](#kernel-param)
 * `mount` - can validate the existence and options relative to a [mount](#mount) point
@@ -245,7 +247,6 @@ service:
     running: false
 ```
 
-
 ### serve, s - Serve a health endpoint
 
 `serve` exposes the goss test suite as a health endpoint on your server. The end-point will return the stest results in the format requested and an http status of 200 or 503.
@@ -253,6 +254,7 @@ service:
 `serve` will look for a test suite in the same order as [validate](#validate-v---validate-the-system)
 
 #### Flags
+
 * `--cache <value>`, `-c <value>` - Time to cache the results (default: 5s)
 * `--endpoint <value>`, `-e <value>` - Endpoint to expose (default: `/healthz`)
 * `--format`, `-f` - output format, same as [validate](#validate-v---validate-the-system)
@@ -268,8 +270,13 @@ $ curl http://localhost:8080/healthz
 # JSON endpoint
 $ goss serve --format json &
 $ curl localhost:8080/healthz
+
+# rspecish output format in response via content negotiation
+goss serve --format json &
+curl -H "Accept: application/vnd.goss-rspecish" localhost:8080/healthz
 ```
 
+The `application/vnd.goss-{output format}` media type can be used in the `Accept` request header to determine the response's content-type. You can also `Accept: application/json` to get back `application/json`.
 
 ### validate, v - Validate the system
 
@@ -278,23 +285,23 @@ $ curl localhost:8080/healthz
 #### Flags
 * `--format`, `-f` (output format)
   * `documentation` - Verbose test results
-  * `json` - Detailed test result
-  * `json_oneline` - Same as json, but oneliner
+  * `json` - Detailed test result on a single line (See `pretty` format option)
   * `junit`
-  * `nagios` - Nagios/Sensu compatible output /w exit code 2 for failures.
+  * `nagios` - Nagios/Sensu compatible output /w exit code 2 for failures
   * `rspecish` **(default)** - Similar to rspec output
   * `tap`
-  * `silent` - No output. Avoids exposing system information (e.g. when serving tests as a healthcheck endpoint).
+  * `silent` - No output. Avoids exposing system information (e.g. when serving tests as a healthcheck endpoint)
 * `--format-options`, `-o` (output format option)
-  * `perfdata` - Outputs Nagios "performance data". Applies to `nagios` output.
-  * `verbose` - Gives verbose output. Applies to `nagios` output.
+  * `perfdata` - Outputs Nagios "performance data". Applies to `nagios` output
+  * `verbose` - Gives verbose output. Applies to `nagios` output
+  * `pretty` - Pretty printing for the `json` output
 * `--max-concurrent` - Max number of tests to run concurrently
 * `--no-color` - Disable color
 * `--color` - Force enable color
 * `--retry-timeout`, `-r` - Retry on failure so long as elapsed + sleep time is less than this (default: 0)
 * `--sleep`, `-s` - Time to sleep between retries (default: 1s)
 
-#### Example:
+#### Examples:
 
 ```bash
 $ goss validate --format documentation
@@ -316,11 +323,34 @@ $ goss render | ssh remote-host 'goss -g - validate'
 Total Duration: 0.002s
 Count: 6, Failed: 0, Skipped: 0
 
-$ goss validate --format nagios -o verbose  -o perfdata
+$ goss validate --format nagios -o verbose -o perfdata
 GOSS CRITICAL - Count: 76, Failed: 1, Skipped: 0, Duration: 1.009s|total=76 failed=1 skipped=0 duration=1.009s
 Fail 1 - DNS: localhost: addrs: doesn't match, expect: [["127.0.0.1","::1"]] found: [["127.0.0.1"]]
 $ echo $?
 2
+```
+
+## Goss test creation
+Goss tests can be created by using either of following methods.
+1. goss autoadd <resource to test>
+2. goss add <resource to test>
+3. manually create YAML/JSON test file by hand.
+
+To customize the parameters generated by `goss add` and `goss autoadd` YAML file you need to manually edit it.
+
+`goss add package nginx` will generate below YAML
+```
+package:
+  nginx:
+    installed: true
+    versions:
+    - 1.17.8
+```
+To test uninstall scenario you would need to manually edit it and set it as below.
+```
+package:
+  nginx:
+    installed: false
 ```
 
 ## Important note about goss file format
@@ -341,7 +371,7 @@ service:
 file:
   /var/www/html:
     filetype: directory
-    exists: true  
+    exists: true
 ```
 
 If you try to validate this file, it will **only** run the second `file` test:
@@ -369,7 +399,7 @@ file:
     exists: true
   /var/www/html:
     filetype: directory
-    exists: true  
+    exists: true
 
 service:
   httpd:
@@ -425,6 +455,8 @@ addr:
   tcp://ip-address-or-domain-name:80:
     reachable: true
     timeout: 500
+    # optional attributes
+    local-address: 127.0.0.1
 ```
 
 
@@ -437,7 +469,7 @@ command:
     # required attributes
     exit-status: 0
     # defaults to hash key
-    exec: "go version" 
+    exec: "go version"
     # optional attributes
     stdout:
     - go version go1.6 linux/amd64
@@ -460,14 +492,14 @@ dns:
     # required attributes
     resolvable: true
     # optional attributes
-    server: 8.8.8.8
     addrs:
     - 127.0.0.1
     - ::1
-    timeout: 500 # in milliseconds
+    server: 8.8.8.8 # Also supports server:port
+    timeout: 500 # in milliseconds (Only used when server attribute is provided)
 ```
 
-With the server attribute set, it is possible to validate the following types of DNS record:
+It is possible to validate the following types of DNS records, but requires the ```server``` attribute be set:
 
 - A
 - AAAA
@@ -495,7 +527,7 @@ dns:
     resolvable: true
     server: 8.8.8.8
     addrs:
-    - "google-public-dns-a.google.com."
+    - "dns.google."
 
   # Validate and SRV record
   SRV:_https._tcp.dnstest.io:
@@ -583,12 +615,16 @@ http:
     allow-insecure: false
     no-follow-redirects: false # Setting this to true will NOT follow redirects
     timeout: 1000
+    request-headers: # Set request header values
+       - "Content-Type: text/html"
+    headers: [] # Check http response headers for these patterns (e.g. "Content-Type: text/html")
     body: [] # Check http response content for these patterns
     username: "" # username for basic auth
     password: "" # password for basic auth
     skip: false
 ```
 
+**NOTE:** only the first `Host` header will be used to set the `Request.Host` value if multiple are provided.
 
 ### interface
 Validates network interface values
@@ -633,6 +669,8 @@ mount:
     - relatime
     source: /dev/mapper/fedora-home
     filesystem: xfs
+    usage: #% of blocks used in this mountpoint
+      lt: 95
 ```
 
 ### matching
@@ -739,6 +777,7 @@ process:
     skip: false
 ```
 
+**NOTE:** This check is inspecting the name of the binary, not the name of the process. For example, a process with the name `nginx: master process /usr/sbin/nginx` would be checked with the process `nginx`. To discover the binary of a pid run `ps -p <PID> -o comm`.
 
 ### service
 Validates the state of a service.
@@ -773,6 +812,7 @@ user:
     skip: false
 ```
 
+**NOTE:** This check is inspecting the contents of local passwd file `/etc/passwd`, this does not validate remote users (e.g. LDAP).
 
 
 ## Patterns
@@ -845,9 +885,21 @@ package:
             contain-element: "4.1.0"
 ```
 
+Custom semver matcher is available under `semver-constraint`:
+
+```yaml
+example:
+  content:
+    - 1.0.1
+    - 1.9.9
+  matches:
+    semver-constraint: ">1.0.0 <2.0.0 !=1.5.0"
+```
+
 For more information see:
 * [gomega_test.go](https://github.com/aelsabbahy/goss/blob/master/resource/gomega_test.go) - For a complete set of supported json -> Gomega mapping
 * [gomega](https://onsi.github.io/gomega/) - Gomega matchers reference
+* [semver](https://github.com/blang/semver#ranges) - Semver constraint (or range) syntax
 
 ## Templates
 
@@ -857,14 +909,20 @@ Available variables:
 * `{{.Env}}`  - Containing environment variables
 * `{{.Vars}}` - Containing the values defined in [--vars](#global-options) file
 
-Available functions beyond text/template [built-in functions](https://golang.org/pkg/text/template/#hdr-Functions):
-* `mkSlice "ARG1" "ARG2"` - Retuns a slice of all the arguments. See examples below for usage.
-* `getEnv "var" ["default"]` - A more forgiving env var lookup. If key is missing either "" or default (if provided) is returned.
-* `readFile "fileName"` - Reads file content into a string, trims whitespace. Useful when a file contains a token.
-  * **NOTE:** Goss will error out during during the parsing phase if the file does not exist, no tests will be executed.
-* `regexMatch "(some)?reg[eE]xp"` - Tests the piped input against the regular expression argument.
+Available functions:
+* [built-in text/template functions](https://golang.org/pkg/text/template/#hdr-Functions)
+* [Sprig functions](https://masterminds.github.io/sprig/)
+* Custom functions:
+  * `mkSlice "ARG1" "ARG2"` - Returns a slice of all the arguments. See examples below for usage.
+  * `getEnv "var" ["default"]` - A more forgiving env var lookup. If key is missing either "" or default (if provided) is returned.
+  * `readFile "fileName"` - Reads file content into a string, trims whitespace. Useful when a file contains a token.
+    * **NOTE:** Goss will error out during during the parsing phase if the file does not exist, no tests will be executed.
+  * `regexMatch "(some)?reg[eE]xp"` - Tests the piped input against the regular expression argument.
+  * `toLower` - Changes piped input to lowercase
+  * `toUpper` - Changes piped input to UPPERCASE
 
 **NOTE:** gossfiles containing text/template `{{}}` controls will no longer work with `goss add/autoadd`. One way to get around this is to split your template and static goss files and use [gossfile](#gossfile) to import.
+**NOTE:** Some of Sprig functions have the same name as the older Custom Goss functions. The Sprig functions are overwritten by the custom functions for backwards compatibility.
 
 ### Examples
 
@@ -885,6 +943,15 @@ file:
     group: root
     filetype: file
 {{end}}
+```
+
+Using `upper` function from Sprig.
+```yaml
+matching:
+  sping_basic:
+    content: {{ "hello!" | upper | repeat 5 }}
+    matches:
+      match-regexp: "HELLO!HELLO!HELLO!HELLO!HELLO!"
 ```
 
 Using Env variables and a vars file:

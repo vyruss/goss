@@ -3,20 +3,19 @@
 [![Build Status](https://travis-ci.org/aelsabbahy/goss.svg?branch=master)](https://travis-ci.org/aelsabbahy/goss)
 [![Github All Releases](https://img.shields.io/github/downloads/aelsabbahy/goss/total.svg?maxAge=604800)](https://github.com/aelsabbahy/goss/releases)
 **
-[![Twitter Follow](https://img.shields.io/twitter/follow/aelsabbahy1.svg?style=social&label=Follow&maxAge=2592000)](https://twitter.com/aelsabbahy1)
 [![Blog](https://img.shields.io/badge/follow-blog-brightgreen.svg)](https://medium.com/@aelsabbahy)
 
 ## Goss in 45 seconds
 
+<a href="https://asciinema.org/a/4suhr8p42qcn6r7crfzt6cc3e?autoplay=1" target="_blank"><img src="https://cloud.githubusercontent.com/assets/6783261/17330426/ce7ad066-5894-11e6-84ea-29fd4207af58.gif" alt="asciicast"></a>
+
 **Note:** For an even faster way of doing this, see: [autoadd](https://github.com/aelsabbahy/goss/blob/master/docs/manual.md#autoadd-aa---auto-add-all-matching-resources-to-test-suite)
 
-**Note:** For testing docker containers see the [dgoss](https://github.com/aelsabbahy/goss/tree/master/extras/dgoss) wrapper
+**Note:** For testing docker containers see the [dgoss](https://github.com/aelsabbahy/goss/tree/master/extras/dgoss) wrapper. Also, user submitted wrapper scripts for Kubernetes [kgoss](https://github.com/aelsabbahy/goss/tree/master/extras/kgoss) and Docker Compose [dcgoss](https://github.com/aelsabbahy/goss/tree/master/extras/dcgoss).
 
 **Note:** For some Docker/Kubernetes healthcheck, health endpoint, and
 container ordering examples, see my blog post
 [here][kubernetes-simplified-health-checks].
-
-<a href="https://asciinema.org/a/4suhr8p42qcn6r7crfzt6cc3e?autoplay=1" target="_blank"><img src="https://cloud.githubusercontent.com/assets/6783261/17330426/ce7ad066-5894-11e6-84ea-29fd4207af58.gif" alt="asciicast"></a>
 
 ## Introduction
 
@@ -27,10 +26,12 @@ Goss is a YAML based [serverspec](http://serverspec.org/) alternative tool for v
 ### Why use Goss?
 
 * Goss is EASY! - [Goss in 45 seconds](#goss-in-45-seconds)
-* Goss is FAST! - small-medium test suits are near instantaneous, see [benchmarks](https://github.com/aelsabbahy/goss/wiki/Benchmarks)
+* Goss is FAST! - small-medium test suites are near instantaneous, see [benchmarks](https://github.com/aelsabbahy/goss/wiki/Benchmarks)
 * Goss is SMALL! - <10MB single self-contained binary
 
 ## Installation
+
+**Note:** For macOS and Windows, see: [platform-feature-parity].
 
 This will install goss and [dgoss](https://github.com/aelsabbahy/goss/tree/master/extras/dgoss).
 
@@ -46,13 +47,29 @@ curl -fsSL https://goss.rocks/install | GOSS_VER=v0.3.6 GOSS_DST=~/bin sh
 
 ### Manual installation
 
+#### Latest
+
+```bash
+curl -L https://github.com/aelsabbahy/goss/releases/latest/download/goss-linux-amd64 -o /usr/local/bin/goss
+chmod +rx /usr/local/bin/goss
+
+curl -L https://github.com/aelsabbahy/goss/releases/latest/download/dgoss -o /usr/local/bin/dgoss
+# Alternatively, using the latest master
+# curl -L https://raw.githubusercontent.com/aelsabbahy/goss/master/extras/dgoss/dgoss -o /usr/local/bin/dgoss
+chmod +rx /usr/local/bin/dgoss
+```
+
+#### Specific Version
+
 ```bash
 # See https://github.com/aelsabbahy/goss/releases for release versions
-curl -L https://github.com/aelsabbahy/goss/releases/download/_VERSION_/goss-linux-amd64 -o /usr/local/bin/goss
+VERSION=v0.3.10
+curl -L "https://github.com/aelsabbahy/goss/releases/download/${VERSION}/goss-linux-amd64" -o /usr/local/bin/goss
 chmod +rx /usr/local/bin/goss
 
 # (optional) dgoss docker wrapper (use 'master' for latest version)
-curl -L https://raw.githubusercontent.com/aelsabbahy/goss/_VERSION_/extras/dgoss/dgoss -o /usr/local/bin/dgoss
+VERSION=v0.3.10
+curl -L "https://github.com/aelsabbahy/goss/releases/download/${VERSION}/dgoss" -o /usr/local/bin/dgoss
 chmod +rx /usr/local/bin/dgoss
 ```
 
@@ -64,7 +81,7 @@ make build
 
 ## Full Documentation
 
-Documentation is available here: https://github.com/aelsabbahy/goss/blob/master/docs/manual.md
+Documentation is available here: [manual](https://github.com/aelsabbahy/goss/blob/master/docs/manual.md)
 
 ## Quick start
 
@@ -74,7 +91,7 @@ An initial set of tests can be derived from the system state by using the [add](
 
 Let's write a simple sshd test using autoadd.
 
-```
+```txt
 # Running it as root will allow it to also detect ports
 $ sudo goss autoadd sshd
 ```
@@ -118,7 +135,7 @@ Now that we have a test suite, we can:
 
 * Run it once
 
-```
+```txt
 goss validate
 ...............
 
@@ -128,25 +145,29 @@ Count: 15, Failed: 0
 
 * Edit it to use [templates](https://github.com/aelsabbahy/goss/blob/master/docs/manual.md#templates), and run with a vars file
 
-```
+```txt
 goss --vars vars.yaml validate
 ```
 
 * keep running it until the system enters a valid state or we timeout
 
-```
+```txt
 goss validate --retry-timeout 30s --sleep 1s
 ```
 
 * serve the tests as a health endpoint
 
-```
+```txt
 goss serve &
 curl localhost:8080/healthz
 
 # JSON endpoint
 goss serve --format json &
 curl localhost:8080/healthz
+
+# rspecish response via content negotiation
+goss serve --format json &
+curl -H "Accept: application/vnd.goss-rspecish" localhost:8080/healthz
 ```
 
 ### Manually editing Goss files
@@ -221,11 +242,11 @@ package:
 
 ## Supported output formats
 
-* rspecish **(default)** - Similar to rspec output
+* rspecish - **(default)** Similar to rspec output
 * documentation - Verbose test results
-* JSON - Detailed test result
-* TAP
-* JUnit
+* json - JSON, detailed test result
+* tap - TAP style
+* junit - JUnit style
 * nagios - Nagios/Sensu compatible output /w exit code 2 for failures.
 * silent - No output. Avoids exposing system information (e.g. when serving tests as a healthcheck endpoint).
 
@@ -240,7 +261,7 @@ package:
 
 ## Limitations
 
-Currently goss only runs on Linux.
+`goss` works well on Linux, but support on Windows & macOS is alpha. See [platform-feature-parity].
 
 The following tests have limitations.
 
@@ -259,3 +280,4 @@ Service:
 * Upstart
 
 [kubernetes-simplified-health-checks]: https://medium.com/@aelsabbahy/docker-1-12-kubernetes-simplified-health-checks-and-container-ordering-with-goss-fa8debbe676c
+[platform-feature-parity]: docs/platform-feature-parity.md

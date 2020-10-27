@@ -26,6 +26,9 @@ addr:
   tcp://google.com:443:
     reachable: true
     timeout: 1000
+  udp://8.8.8.8:53:
+    reachable: true
+    timeout: 1000
 port:
   tcp:80:
     listening: false
@@ -97,10 +100,10 @@ dns:
     - ns2.dnstest.io.
     timeout: 1000
     server: 8.8.8.8
-  PTR:8.8.8.8:
+  PTR:54.243.154.1:
     resolvable: true
     addrs:
-    - google-public-dns-a.google.com.
+    - ec2-54-243-154-1.compute-1.amazonaws.com.
     timeout: 1000
     server: 8.8.8.8
   SRV:_https._tcp.dnstest.io:
